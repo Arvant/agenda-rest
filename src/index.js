@@ -44,6 +44,19 @@ const getJobMiddleware = (jobAssertion, jobOperation, errorCode = 400) => async 
   await next();
 };
 
+const getJobMiddlewareBatch = (jobAssertion, jobOperation, errorCode = 400) => async (ctx, next) => {
+  if (settings.appId && ctx.request.headers['x-api-key'] !== settings.appId) {
+    ctx.throw(403, 'Forbidden');
+  }
+  const job = ctx.request.body || {};
+  if (ctx.params.jobName) {
+    job.name = ctx.params.jobName;
+  }
+  const jobs = await jobsReady;
+  ctx.body = await promiseJobOperation(job, jobs, agenda, jobAssertion, jobOperation)
+    .catch(error => ctx.throw(errorCode, error));
+};
+
 const listJobs = async (ctx, next) => {
   if (settings.appId && ctx.request.headers['x-api-key'] !== settings.appId) {
     ctx.throw(403, 'Forbidden');
@@ -86,6 +99,16 @@ router.post('/api/v1/job/once', redirect('/api/job/once'));
 router.post('/api/v1/job/every', redirect('/api/job/every'));
 router.post('/api/v1/job/now', redirect('/api/job/now'));
 router.post('/api/v1/job/cancel', redirect('/api/job/cancel'));
-
+router.post('/api/job/batch/once', async(ctx,next)=>{
+  const intervals=ctx.request.body.interval;
+  for(var i=0;i<intervals.length;i++){
+    let er=false;
+    ctx.request.body.interval=intervals[i];
+    await getJobMiddlewareBatch(jobAssertions.alreadyExists, jobOperations.once)(ctx,next)
+    .catch(error => {ctx.throw(400, error);er=true});
+    if(er)
+      break;
+  }
+});
 export {app, router, agenda, jobsReady};
 export default app;
